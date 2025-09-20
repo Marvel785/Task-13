@@ -365,60 +365,77 @@ jobs:
       - name: Checkout Repository
         uses: actions/checkout@v4
 
+      - name: Setup PetClinic Project for Docker
+        run: |
+          echo "Setting up PetClinic project for Docker build..."
+          
+          # Download fresh copy since this is a new job
+          git clone https://github.com/spring-projects/spring-petclinic.git temp-petclinic
+          cp -r temp-petclinic/* .
+          rm -rf temp-petclinic
+          
+          echo "Project files copied to root directory"
+          ls -la
+
       - name: Prepare Docker Build
         run: |
           echo "Preparing Docker build environment..."
-          BUILD_PATH="${BUILD_DIR:-./}"
-          cd "$BUILD_PATH"
+          
+          # Verify required files are present
+          echo "Verifying required files:"
+          echo "pom.xml: $([ -f pom.xml ] && echo 'Present' || echo 'Missing')"
+          echo "src/: $([ -d src ] && echo 'Present' || echo 'Missing')"
+          echo "mvnw: $([ -f mvnw ] && echo 'Present' || echo 'Missing')"
+          echo ".mvn/: $([ -d .mvn ] && echo 'Present' || echo 'Missing')"
           
           # Check if Dockerfile exists
           if [ ! -f "Dockerfile" ]; then
-              echo "Creating Dockerfile for Spring Boot application..."
+              echo "Creating optimized multi-stage Dockerfile..."
               
-              # Create a proper Dockerfile for Spring Boot
-              echo "# Use OpenJDK 17" > Dockerfile
-              echo "FROM openjdk:17-jdk-slim" >> Dockerfile
-              echo "" >> Dockerfile
-              echo "# Set working directory" >> Dockerfile
-              echo "WORKDIR /app" >> Dockerfile
-              echo "" >> Dockerfile
-              echo "# Copy Maven wrapper and pom.xml" >> Dockerfile
-              echo "COPY mvnw ." >> Dockerfile
-              echo "COPY .mvn .mvn" >> Dockerfile
-              echo "COPY pom.xml ." >> Dockerfile
-              echo "" >> Dockerfile
-              echo "# Download dependencies" >> Dockerfile
-              echo "RUN chmod +x ./mvnw" >> Dockerfile
-              echo "RUN ./mvnw dependency:go-offline" >> Dockerfile
-              echo "" >> Dockerfile
-              echo "# Copy source code" >> Dockerfile
-              echo "COPY src ./src" >> Dockerfile
-              echo "" >> Dockerfile
-              echo "# Build application" >> Dockerfile
-              echo "RUN ./mvnw package -DskipTests" >> Dockerfile
-              echo "" >> Dockerfile
-              echo "# Expose port" >> Dockerfile
-              echo "EXPOSE 9500" >> Dockerfile
-              echo "" >> Dockerfile
-              echo "# Run application" >> Dockerfile
-              echo "CMD [\"java\", \"-jar\", \"target/*.jar\"]" >> Dockerfile
+              cat > Dockerfile << 'EOF'
+# Multi-stage build for Spring Boot application
+FROM maven:3.8.7-eclipse-temurin-17 AS build
+WORKDIR /app
+
+# Copy pom.xml and Maven wrapper files
+COPY pom.xml .
+COPY mvnw .
+COPY .mvn .mvn
+
+# Make Maven wrapper executable and download dependencies
+RUN chmod +x ./mvnw
+RUN ./mvnw dependency:go-offline -B
+
+# Copy source code
+COPY src ./src
+
+# Build the application
+RUN ./mvnw clean package -DskipTests
+
+# Production stage
+FROM openjdk:17-jdk-slim
+WORKDIR /app
+
+# Install curl for health checks
+RUN apt-get update && apt-get install -y curl && rm -rf /var/lib/apt/lists/*
+
+# Copy the JAR file from build stage
+COPY --from=build /app/target/*.jar app.jar
+
+# Expose port 8080 (Spring Boot default)
+EXPOSE 8080
+
+# Add health check
+HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
+  CMD curl -f http://localhost:8080/actuator/health || exit 1
+
+# Run the application
+ENTRYPOINT ["java", "-jar", "app.jar"]
+EOF
               
-              echo "Created Dockerfile for Spring Boot application"
+              echo "Created multi-stage Dockerfile for Spring Boot application"
           else
               echo "Dockerfile already exists"
-          fi
-          
-          # Verify JAR file exists from previous build
-          if [ -f "target/*.jar" ] || ls target/*.jar 1> /dev/null 2>&1; then
-              echo "JAR file found in target directory"
-              JAR_FILE=$(ls target/*.jar | grep -v sources | grep -v javadoc | head -1)
-              if [ -n "$JAR_FILE" ]; then
-                  echo "Using JAR file: $JAR_FILE"
-                  # Update Dockerfile to use specific JAR file
-                  sed -i "s|target/\*.jar|$JAR_FILE|g" Dockerfile
-              fi
-          else
-              echo "No JAR file found - will be built during Docker build"
           fi
           
           echo "Docker build preparation completed"
@@ -453,6 +470,126 @@ jobs:
           docker system prune -f || true
           
           echo "Cleanup completed!"
+
+      - name: Create Docker Compose Configuration
+        run: |
+          if [ ! -f "docker-compose.yml" ]; then
+              echo "Creating docker-compose.yml..."
+              cat > docker-compose.yml << 'EOF'
+version: '3.8'
+
+services:
+  mysql:
+    image: mysql:8.0
+    container_name: mysql
+    environment:
+      MYSQL_ROOT_PASSWORD: petclinic
+      MYSQL_DATABASE: petclinic
+    ports:
+      - "3306:3306"
+    volumes:
+      - mysql_data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
+      timeout: 20s
+      retries: 10
+    networks:
+      - petclinic-network
+
+  petclinic-app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: petclinic-app
+    ports:
+      - "9500:8080"
+    environment:
+      - SPRING_PROFILES_ACTIVE=mysql
+      - SPRING_DATASOURCE_URL=jdbc:mysql://mysql:3306/petclinic
+      - SPRING_DATASOURCE_USERNAME=root
+      - SPRING_DATASOURCE_PASSWORD=petclinic
+      - MANAGEMENT_ENDPOINTS_WEB_EXPOSURE_INCLUDE=health,info,metrics,prometheus
+    depends_on:
+      mysql:
+        condition: service_healthy
+    networks:
+      - petclinic-network
+
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: prometheus
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml
+      - prometheus_data:/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--web.console.libraries=/etc/prometheus/console_libraries'
+      - '--web.console.templates=/etc/prometheus/consoles'
+      - '--storage.tsdb.retention.time=200h'
+      - '--web.enable-lifecycle'
+    networks:
+      - petclinic-network
+
+  grafana:
+    image: grafana/grafana:latest
+    container_name: grafana
+    ports:
+      - "3000:3000"
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=admin123
+    volumes:
+      - grafana_data:/var/lib/grafana
+    networks:
+      - petclinic-network
+
+  node-exporter:
+    image: prom/node-exporter:latest
+    container_name: node-exporter
+    ports:
+      - "9100:9100"
+    networks:
+      - petclinic-network
+
+volumes:
+  mysql_data:
+  prometheus_data:
+  grafana_data:
+
+networks:
+  petclinic-network:
+    driver: bridge
+EOF
+              echo "docker-compose.yml created successfully"
+          fi
+
+      - name: Create Prometheus Configuration
+        run: |
+          if [ ! -f "prometheus.yml" ]; then
+              echo "Creating prometheus.yml..."
+              cat > prometheus.yml << 'EOF'
+global:
+  scrape_interval: 15s
+
+scrape_configs:
+  - job_name: 'petclinic'
+    static_configs:
+      - targets: ['petclinic-app:8080']
+    metrics_path: '/actuator/prometheus'
+    scrape_interval: 5s
+
+  - job_name: 'node-exporter'
+    static_configs:
+      - targets: ['node-exporter:9100']
+
+  - job_name: 'prometheus'
+    static_configs:
+      - targets: ['localhost:9090']
+EOF
+              echo "prometheus.yml created successfully"
+          fi
 
       - name: Verify Docker Configuration
         run: |
@@ -493,80 +630,12 @@ jobs:
               COMPOSE_FILE="$(basename "$COMPOSE_FILE_PATH")"
               echo "Using existing Docker Compose file: $COMPOSE_FILE_PATH"
           else
-              echo "No docker-compose.yml found, creating basic configuration..."
               COMPOSE_FILE="docker-compose.yml"
-              
-              # Create docker-compose.yml using echo commands
-              echo "version: '3.8'" > docker-compose.yml
-              echo "" >> docker-compose.yml
-              echo "services:" >> docker-compose.yml
-              echo "  mysql:" >> docker-compose.yml
-              echo "    image: mysql:8.0" >> docker-compose.yml
-              echo "    container_name: mysql" >> docker-compose.yml
-              echo "    environment:" >> docker-compose.yml
-              echo "      MYSQL_ROOT_PASSWORD: petclinic" >> docker-compose.yml
-              echo "      MYSQL_DATABASE: petclinic" >> docker-compose.yml
-              echo "    ports:" >> docker-compose.yml
-              echo "      - \"3306:3306\"" >> docker-compose.yml
-              echo "    volumes:" >> docker-compose.yml
-              echo "      - mysql_data:/var/lib/mysql" >> docker-compose.yml
-              echo "    healthcheck:" >> docker-compose.yml
-              echo "      test: [\"CMD\", \"mysqladmin\", \"ping\", \"-h\", \"localhost\"]" >> docker-compose.yml
-              echo "      timeout: 20s" >> docker-compose.yml
-              echo "      retries: 10" >> docker-compose.yml
-              echo "" >> docker-compose.yml
-              echo "  petclinic-app:" >> docker-compose.yml
-              echo "    build:" >> docker-compose.yml
-              echo "      context: ." >> docker-compose.yml
-              echo "      dockerfile: Dockerfile" >> docker-compose.yml
-              echo "    container_name: petclinic-app" >> docker-compose.yml
-              echo "    ports:" >> docker-compose.yml
-              echo "      - \"9500:8080\"" >> docker-compose.yml
-              echo "    environment:" >> docker-compose.yml
-              echo "      - SPRING_PROFILES_ACTIVE=mysql" >> docker-compose.yml
-              echo "      - SPRING_DATASOURCE_URL=jdbc:mysql://mysql:3306/petclinic" >> docker-compose.yml
-              echo "      - SPRING_DATASOURCE_USERNAME=root" >> docker-compose.yml
-              echo "      - SPRING_DATASOURCE_PASSWORD=petclinic" >> docker-compose.yml
-              echo "    depends_on:" >> docker-compose.yml
-              echo "      mysql:" >> docker-compose.yml
-              echo "        condition: service_healthy" >> docker-compose.yml
-              echo "" >> docker-compose.yml
-              echo "volumes:" >> docker-compose.yml
-              echo "  mysql_data:" >> docker-compose.yml
-              
-              echo "Created basic docker-compose.yml"
+              echo "Using created docker-compose.yml"
           fi
           
-          if [ -d "alertmanager.yml" ]; then
-              echo "Found directory instead of file: alertmanager.yml"
-              rm -rf alertmanager.yml
-              echo "Removed alertmanager.yml directory"
-          fi
-          
-          mkdir -p alertmanager
-          mkdir -p grafana/provisioning/datasources
-          mkdir -p grafana/provisioning/dashboards
           mkdir -p prometheus/data grafana/data mysql/data
-          
-          echo "global:" > alertmanager.yml
-          echo "  smtp_from: alertmanager@localhost" >> alertmanager.yml
-          echo "  smtp_smarthost: localhost:587" >> alertmanager.yml
-          echo "  smtp_require_tls: false" >> alertmanager.yml
-          echo "" >> alertmanager.yml
-          echo "route:" >> alertmanager.yml
-          echo "  group_by: ['alertname']" >> alertmanager.yml
-          echo "  receiver: 'default-receiver'" >> alertmanager.yml
-          echo "" >> alertmanager.yml
-          echo "receivers:" >> alertmanager.yml
-          echo "  - name: 'default-receiver'" >> alertmanager.yml
-          echo "    email_configs:" >> alertmanager.yml
-          echo "      - to: 'admin@example.com'" >> alertmanager.yml
-          echo "        send_resolved: true" >> alertmanager.yml
-          
-          echo "Created alertmanager.yml configuration file"
-          
           chmod -R 755 . 2>/dev/null || true
-          chmod 644 alertmanager.yml
           
           echo "Building Docker images..."
           $COMPOSE -f "$COMPOSE_FILE" build --no-cache
@@ -646,12 +715,32 @@ jobs:
           COMPOSE="${COMPOSE_CMD:-docker compose}"
           COMPOSE_FILE_PATH="${COMPOSE_FILE:-docker-compose.yml}"
           
+          echo "Docker system info:"
+          docker info | head -10
+          
+          echo ""
+          echo "All Docker containers (including stopped):"
+          docker ps -a
+          
+          echo ""
+          echo "Docker images:"
+          docker images | head -10
+          
+          echo ""
+          echo "Docker volumes:"
+          docker volume ls
+          
           if [ -f "$COMPOSE_FILE_PATH" ]; then
               cd "$(dirname "$COMPOSE_FILE_PATH")"
               COMPOSE_FILE="$(basename "$COMPOSE_FILE_PATH")"
               
-              echo "Final Container Status:"
+              echo ""
+              echo "Compose container status:"
               $COMPOSE -f "$COMPOSE_FILE" ps
+              
+              echo ""
+              echo "Compose services:"
+              $COMPOSE -f "$COMPOSE_FILE" config --services
           fi
           
           echo ""
@@ -673,6 +762,8 @@ jobs:
           echo "Restart service: ${COMPOSE_CMD:-docker compose} restart [service-name]"
           
           echo ""
+          echo "NOTE: Containers should persist on self-hosted runner"
+          echo "If containers are missing, check the build/deploy steps above"
           echo "DEPLOYMENT COMPLETED SUCCESSFULLY!"
 
       - name: Save Deployment Logs
@@ -725,7 +816,7 @@ jobs:
           
           if [ "${{ needs.docker-build-and-deploy.result }}" == "success" ]; then
               echo ""
-              echo "SUCCESS! Your PetClinic application is now running!"
+              echo "SUCCESS! Your PetClinic application should be running on your WSL!"
               echo ""
               echo "Spring PetClinic Application: DEPLOYED"
               echo "MySQL Database: RUNNING"
@@ -733,10 +824,14 @@ jobs:
               echo "Grafana Dashboards: AVAILABLE"
               echo "Node Exporter: COLLECTING METRICS"
               echo ""
-              echo "Quick Access URLs:"
+              echo "Quick Access URLs (on your WSL machine):"
               echo "• Application: http://localhost:9500"
               echo "• Monitoring: http://localhost:3000 (admin/admin123)"
               echo "• Metrics: http://localhost:9090"
+              echo ""
+              echo "To check containers on your WSL:"
+              echo "docker ps -a"
+              echo "docker compose logs"
           elif [ "${{ needs.docker-build-and-deploy.result }}" == "failure" ]; then
               echo ""
               echo "DEPLOYMENT FAILED - Check the logs for details"
@@ -745,6 +840,7 @@ jobs:
               echo "1. Port conflicts - Check if ports 9500, 3000, 9090, 3306 are available"
               echo "2. Docker resources - Try docker system prune -f"
               echo "3. Memory issues - Check available memory"
+              echo "4. File permissions in WSL"
           fi
           
           echo ""
