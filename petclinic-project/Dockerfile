@@ -1,13 +1,10 @@
 FROM maven:3.8.7-eclipse-temurin-17 AS build
 WORKDIR /app
 
-COPY petclinic-project/pom.xml .
-
+COPY pom.xml .
 RUN mvn dependency:go-offline -B
 
-COPY petclinic-project/src ./src
-
-
+COPY src ./src
 RUN mvn clean package -DskipTests
 
 FROM openjdk:17-jdk-slim
