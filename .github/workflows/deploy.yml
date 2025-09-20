@@ -321,6 +321,7 @@ jobs:
         route:
           group_by: ['alertname']
           receiver: 'default-receiver'
+<<<<<<< HEAD
 
         receivers:
           - name: 'default-receiver'
@@ -342,6 +343,28 @@ jobs:
         
         echo "Deployment completed"
 
+=======
+
+        receivers:
+          - name: 'default-receiver'
+            email_configs:
+              - to: 'admin@example.com'
+                send_resolved: true
+        EOF
+        
+        echo "Created alertmanager.yml configuration file"
+        
+        chmod -R 755 . 2>/dev/null || true
+        chmod 644 alertmanager.yml
+        
+        echo "Building Docker images..."
+        docker-compose -f "$COMPOSE_FILE" build --no-cache
+        
+        echo "Starting all services..."
+        docker-compose -f "$COMPOSE_FILE" up -d
+        
+        echo "Deployment completed"
+>>>>>>> ea6473fc528c18563e27930b201b2973c560e871
 
       - name: Health Checks
         run: |
