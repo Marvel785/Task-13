@@ -369,56 +369,96 @@ jobs:
         run: |
           echo "Preparing Docker build environment..."
           BUILD_PATH="${BUILD_DIR:-./}"
+          echo "Build directory: $BUILD_PATH"
           cd "$BUILD_PATH"
           
-          # Check if Dockerfile exists
+          # List current directory contents
+          echo "Current directory contents:"
+          ls -la
+          
+          # Check if essential files exist
+          if [ ! -f "pom.xml" ]; then
+              echo "ERROR: pom.xml not found in build directory"
+              echo "Looking for pom.xml in parent directories..."
+              find .. -name "pom.xml" -type f | head -5
+              exit 1
+          fi
+          
+          if [ ! -d "src" ]; then
+              echo "ERROR: src directory not found in build directory"
+              echo "Looking for src directories..."
+              find .. -name "src" -type d | head -5
+              exit 1
+          fi
+          
+          # Check if Dockerfile exists and is appropriate
           if [ ! -f "Dockerfile" ]; then
               echo "Creating Dockerfile for Spring Boot application..."
               
-              # Create a proper Dockerfile for Spring Boot
-              echo "# Use OpenJDK 17" > Dockerfile
-              echo "FROM openjdk:17-jdk-slim" >> Dockerfile
-              echo "" >> Dockerfile
-              echo "# Set working directory" >> Dockerfile
+              # Create a multi-stage Dockerfile optimized for Spring Boot
+              echo "FROM maven:3.8.7-eclipse-temurin-17 AS build" > Dockerfile
               echo "WORKDIR /app" >> Dockerfile
               echo "" >> Dockerfile
-              echo "# Copy Maven wrapper and pom.xml" >> Dockerfile
+              echo "# Copy Maven configuration first for better caching" >> Dockerfile
+              echo "COPY pom.xml ." >> Dockerfile
               echo "COPY mvnw ." >> Dockerfile
               echo "COPY .mvn .mvn" >> Dockerfile
-              echo "COPY pom.xml ." >> Dockerfile
               echo "" >> Dockerfile
-              echo "# Download dependencies" >> Dockerfile
-              echo "RUN chmod +x ./mvnw" >> Dockerfile
-              echo "RUN ./mvnw dependency:go-offline" >> Dockerfile
+              echo "# Download dependencies (this will be cached if pom.xml doesn't change)" >> Dockerfile
+              echo "RUN chmod +x mvnw && ./mvnw dependency:go-offline -B" >> Dockerfile
               echo "" >> Dockerfile
               echo "# Copy source code" >> Dockerfile
               echo "COPY src ./src" >> Dockerfile
               echo "" >> Dockerfile
-              echo "# Build application" >> Dockerfile
-              echo "RUN ./mvnw package -DskipTests" >> Dockerfile
+              echo "# Build the application" >> Dockerfile
+              echo "RUN ./mvnw clean package -DskipTests" >> Dockerfile
               echo "" >> Dockerfile
-              echo "# Expose port" >> Dockerfile
+              echo "# Runtime stage" >> Dockerfile
+              echo "FROM openjdk:17-jdk-slim" >> Dockerfile
+              echo "WORKDIR /app" >> Dockerfile
+              echo "" >> Dockerfile
+              echo "# Install curl for health checks" >> Dockerfile
+              echo "RUN apt-get update && apt-get install -y curl && rm -rf /var/lib/apt/lists/*" >> Dockerfile
+              echo "" >> Dockerfile
+              echo "# Copy the built JAR from build stage" >> Dockerfile
+              echo "COPY --from=build /app/target/*.jar app.jar" >> Dockerfile
+              echo "" >> Dockerfile
+              echo "# Expose port (Spring Boot default is 8080)" >> Dockerfile
               echo "EXPOSE 8080" >> Dockerfile
               echo "" >> Dockerfile
-              echo "# Run application" >> Dockerfile
-              echo "CMD [\"java\", \"-jar\", \"target/*.jar\"]" >> Dockerfile
+              echo "# Health check" >> Dockerfile
+              echo "HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \\" >> Dockerfile
+              echo "    CMD curl -f http://localhost:8080/actuator/health || exit 1" >> Dockerfile
+              echo "" >> Dockerfile
+              echo "# Run the application" >> Dockerfile
+              echo "ENTRYPOINT [\"java\", \"-Djava.security.egd=file:/dev/./urandom\", \"-jar\", \"app.jar\"]" >> Dockerfile
               
-              echo "Created Dockerfile for Spring Boot application"
+              echo "Created optimized multi-stage Dockerfile"
           else
-              echo "Dockerfile already exists"
+              echo "Dockerfile already exists, checking if it needs updates..."
+              
+              # Update existing Dockerfile to expose correct port
+              if grep -q "EXPOSE 9200" Dockerfile; then
+                  echo "Updating Dockerfile to expose correct port (8080 instead of 9200)"
+                  sed -i 's/EXPOSE 9200/EXPOSE 8080/' Dockerfile
+                  sed -i 's/localhost:9200/localhost:8080/g' Dockerfile
+              fi
+              
+              echo "Dockerfile validation completed"
           fi
           
-          # Verify JAR file exists from previous build
-          if [ -f "target/*.jar" ] || ls target/*.jar 1> /dev/null 2>&1; then
-              echo "JAR file found in target directory"
-              JAR_FILE=$(ls target/*.jar | grep -v sources | grep -v javadoc | head -1)
-              if [ -n "$JAR_FILE" ]; then
-                  echo "Using JAR file: $JAR_FILE"
-                  # Update Dockerfile to use specific JAR file
-                  sed -i "s|target/\*.jar|$JAR_FILE|g" Dockerfile
-              fi
-          else
-              echo "No JAR file found - will be built during Docker build"
+          # Verify all required files are present
+          echo ""
+          echo "Verifying build files:"
+          echo "pom.xml: $([ -f pom.xml ] && echo '✓ Found' || echo '✗ Missing')"
+          echo "src directory: $([ -d src ] && echo '✓ Found' || echo '✗ Missing')"
+          echo "mvnw: $([ -f mvnw ] && echo '✓ Found' || echo '✗ Missing')"
+          echo "Dockerfile: $([ -f Dockerfile ] && echo '✓ Found' || echo '✗ Missing')"
+          
+          # Make sure mvnw is executable
+          if [ -f mvnw ]; then
+              chmod +x mvnw
+              echo "Made mvnw executable"
           fi
           
           echo "Docker build preparation completed"
@@ -496,6 +536,9 @@ jobs:
               echo "No docker-compose.yml found, creating basic configuration..."
               COMPOSE_FILE="docker-compose.yml"
               
+              # Get the build directory for proper context
+              BUILD_CONTEXT="${BUILD_DIR:-./}"
+              
               # Create docker-compose.yml using echo commands
               echo "version: '3.8'" > docker-compose.yml
               echo "" >> docker-compose.yml
@@ -517,7 +560,7 @@ jobs:
               echo "" >> docker-compose.yml
               echo "  petclinic-app:" >> docker-compose.yml
               echo "    build:" >> docker-compose.yml
-              echo "      context: ." >> docker-compose.yml
+              echo "      context: $BUILD_CONTEXT" >> docker-compose.yml
               echo "      dockerfile: Dockerfile" >> docker-compose.yml
               echo "    container_name: petclinic-app" >> docker-compose.yml
               echo "    ports:" >> docker-compose.yml
@@ -569,6 +612,27 @@ jobs:
           chmod 644 alertmanager.yml
           
           echo "Building Docker images..."
+          echo "Build context: $(pwd)"
+          echo "Compose file: $COMPOSE_FILE"
+          echo "Build directory: ${BUILD_DIR}"
+          
+          # If we have a specific build directory, we need to adjust the build context
+          if [ -n "${BUILD_DIR}" ] && [ "${BUILD_DIR}" != "./" ] && [ "${BUILD_DIR}" != "." ]; then
+              echo "Adjusting docker-compose.yml for build directory: ${BUILD_DIR}"
+              
+              # Update the docker-compose.yml to use correct build context
+              if [ -f "$COMPOSE_FILE" ]; then
+                  # Replace context path in existing compose file
+                  sed -i "s|context: \.|context: ${BUILD_DIR}|g" "$COMPOSE_FILE"
+                  sed -i "s|dockerfile: Dockerfile|dockerfile: ${BUILD_DIR}/Dockerfile|g" "$COMPOSE_FILE"
+                  echo "Updated docker-compose.yml build context"
+              fi
+          fi
+          
+          # Show the final compose file for debugging
+          echo "Final docker-compose.yml content:"
+          cat "$COMPOSE_FILE"
+          
           $COMPOSE -f "$COMPOSE_FILE" build --no-cache
           
           echo "Starting all services..."
