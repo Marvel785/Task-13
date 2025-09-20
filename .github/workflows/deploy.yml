@@ -392,46 +392,45 @@ jobs:
           if [ ! -f "Dockerfile" ]; then
               echo "Creating optimized multi-stage Dockerfile..."
               
-              cat > Dockerfile << 'EOF'
-# Multi-stage build for Spring Boot application
-FROM maven:3.8.7-eclipse-temurin-17 AS build
-WORKDIR /app
-
-# Copy pom.xml and Maven wrapper files
-COPY pom.xml .
-COPY mvnw .
-COPY .mvn .mvn
-
-# Make Maven wrapper executable and download dependencies
-RUN chmod +x ./mvnw
-RUN ./mvnw dependency:go-offline -B
-
-# Copy source code
-COPY src ./src
-
-# Build the application
-RUN ./mvnw clean package -DskipTests
-
-# Production stage
-FROM openjdk:17-jdk-slim
-WORKDIR /app
-
-# Install curl for health checks
-RUN apt-get update && apt-get install -y curl && rm -rf /var/lib/apt/lists/*
-
-# Copy the JAR file from build stage
-COPY --from=build /app/target/*.jar app.jar
-
-# Expose port 8080 (Spring Boot default)
-EXPOSE 8080
-
-# Add health check
-HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
-  CMD curl -f http://localhost:8080/actuator/health || exit 1
-
-# Run the application
-ENTRYPOINT ["java", "-jar", "app.jar"]
-EOF
+              # Create Dockerfile using echo commands
+              echo "# Multi-stage build for Spring Boot application" > Dockerfile
+              echo "FROM maven:3.8.7-eclipse-temurin-17 AS build" >> Dockerfile
+              echo "WORKDIR /app" >> Dockerfile
+              echo "" >> Dockerfile
+              echo "# Copy pom.xml and Maven wrapper files" >> Dockerfile
+              echo "COPY pom.xml ." >> Dockerfile
+              echo "COPY mvnw ." >> Dockerfile
+              echo "COPY .mvn .mvn" >> Dockerfile
+              echo "" >> Dockerfile
+              echo "# Make Maven wrapper executable and download dependencies" >> Dockerfile
+              echo "RUN chmod +x ./mvnw" >> Dockerfile
+              echo "RUN ./mvnw dependency:go-offline -B" >> Dockerfile
+              echo "" >> Dockerfile
+              echo "# Copy source code" >> Dockerfile
+              echo "COPY src ./src" >> Dockerfile
+              echo "" >> Dockerfile
+              echo "# Build the application" >> Dockerfile
+              echo "RUN ./mvnw clean package -DskipTests" >> Dockerfile
+              echo "" >> Dockerfile
+              echo "# Production stage" >> Dockerfile
+              echo "FROM openjdk:17-jdk-slim" >> Dockerfile
+              echo "WORKDIR /app" >> Dockerfile
+              echo "" >> Dockerfile
+              echo "# Install curl for health checks" >> Dockerfile
+              echo "RUN apt-get update && apt-get install -y curl && rm -rf /var/lib/apt/lists/*" >> Dockerfile
+              echo "" >> Dockerfile
+              echo "# Copy the JAR file from build stage" >> Dockerfile
+              echo "COPY --from=build /app/target/*.jar app.jar" >> Dockerfile
+              echo "" >> Dockerfile
+              echo "# Expose port 8080 (Spring Boot default)" >> Dockerfile
+              echo "EXPOSE 8080" >> Dockerfile
+              echo "" >> Dockerfile
+              echo "# Add health check" >> Dockerfile
+              echo "HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \\" >> Dockerfile
+              echo "  CMD curl -f http://localhost:8080/actuator/health || exit 1" >> Dockerfile
+              echo "" >> Dockerfile
+              echo "# Run the application" >> Dockerfile
+              echo "ENTRYPOINT [\"java\", \"-jar\", \"app.jar\"]" >> Dockerfile
               
               echo "Created multi-stage Dockerfile for Spring Boot application"
           else
@@ -475,93 +474,94 @@ EOF
         run: |
           if [ ! -f "docker-compose.yml" ]; then
               echo "Creating docker-compose.yml..."
-              cat > docker-compose.yml << 'EOF'
-version: '3.8'
-
-services:
-  mysql:
-    image: mysql:8.0
-    container_name: mysql
-    environment:
-      MYSQL_ROOT_PASSWORD: petclinic
-      MYSQL_DATABASE: petclinic
-    ports:
-      - "3306:3306"
-    volumes:
-      - mysql_data:/var/lib/mysql
-    healthcheck:
-      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
-      timeout: 20s
-      retries: 10
-    networks:
-      - petclinic-network
-
-  petclinic-app:
-    build:
-      context: .
-      dockerfile: Dockerfile
-    container_name: petclinic-app
-    ports:
-      - "9500:8080"
-    environment:
-      - SPRING_PROFILES_ACTIVE=mysql
-      - SPRING_DATASOURCE_URL=jdbc:mysql://mysql:3306/petclinic
-      - SPRING_DATASOURCE_USERNAME=root
-      - SPRING_DATASOURCE_PASSWORD=petclinic
-      - MANAGEMENT_ENDPOINTS_WEB_EXPOSURE_INCLUDE=health,info,metrics,prometheus
-    depends_on:
-      mysql:
-        condition: service_healthy
-    networks:
-      - petclinic-network
-
-  prometheus:
-    image: prom/prometheus:latest
-    container_name: prometheus
-    ports:
-      - "9090:9090"
-    volumes:
-      - ./prometheus.yml:/etc/prometheus/prometheus.yml
-      - prometheus_data:/prometheus
-    command:
-      - '--config.file=/etc/prometheus/prometheus.yml'
-      - '--storage.tsdb.path=/prometheus'
-      - '--web.console.libraries=/etc/prometheus/console_libraries'
-      - '--web.console.templates=/etc/prometheus/consoles'
-      - '--storage.tsdb.retention.time=200h'
-      - '--web.enable-lifecycle'
-    networks:
-      - petclinic-network
-
-  grafana:
-    image: grafana/grafana:latest
-    container_name: grafana
-    ports:
-      - "3000:3000"
-    environment:
-      - GF_SECURITY_ADMIN_PASSWORD=admin123
-    volumes:
-      - grafana_data:/var/lib/grafana
-    networks:
-      - petclinic-network
-
-  node-exporter:
-    image: prom/node-exporter:latest
-    container_name: node-exporter
-    ports:
-      - "9100:9100"
-    networks:
-      - petclinic-network
-
-volumes:
-  mysql_data:
-  prometheus_data:
-  grafana_data:
-
-networks:
-  petclinic-network:
-    driver: bridge
-EOF
+              
+              # Create docker-compose.yml using echo commands
+              echo "version: '3.8'" > docker-compose.yml
+              echo "" >> docker-compose.yml
+              echo "services:" >> docker-compose.yml
+              echo "  mysql:" >> docker-compose.yml
+              echo "    image: mysql:8.0" >> docker-compose.yml
+              echo "    container_name: mysql" >> docker-compose.yml
+              echo "    environment:" >> docker-compose.yml
+              echo "      MYSQL_ROOT_PASSWORD: petclinic" >> docker-compose.yml
+              echo "      MYSQL_DATABASE: petclinic" >> docker-compose.yml
+              echo "    ports:" >> docker-compose.yml
+              echo "      - \"3306:3306\"" >> docker-compose.yml
+              echo "    volumes:" >> docker-compose.yml
+              echo "      - mysql_data:/var/lib/mysql" >> docker-compose.yml
+              echo "    healthcheck:" >> docker-compose.yml
+              echo "      test: [\"CMD\", \"mysqladmin\", \"ping\", \"-h\", \"localhost\"]" >> docker-compose.yml
+              echo "      timeout: 20s" >> docker-compose.yml
+              echo "      retries: 10" >> docker-compose.yml
+              echo "    networks:" >> docker-compose.yml
+              echo "      - petclinic-network" >> docker-compose.yml
+              echo "" >> docker-compose.yml
+              echo "  petclinic-app:" >> docker-compose.yml
+              echo "    build:" >> docker-compose.yml
+              echo "      context: ." >> docker-compose.yml
+              echo "      dockerfile: Dockerfile" >> docker-compose.yml
+              echo "    container_name: petclinic-app" >> docker-compose.yml
+              echo "    ports:" >> docker-compose.yml
+              echo "      - \"9500:8080\"" >> docker-compose.yml
+              echo "    environment:" >> docker-compose.yml
+              echo "      - SPRING_PROFILES_ACTIVE=mysql" >> docker-compose.yml
+              echo "      - SPRING_DATASOURCE_URL=jdbc:mysql://mysql:3306/petclinic" >> docker-compose.yml
+              echo "      - SPRING_DATASOURCE_USERNAME=root" >> docker-compose.yml
+              echo "      - SPRING_DATASOURCE_PASSWORD=petclinic" >> docker-compose.yml
+              echo "      - MANAGEMENT_ENDPOINTS_WEB_EXPOSURE_INCLUDE=health,info,metrics,prometheus" >> docker-compose.yml
+              echo "    depends_on:" >> docker-compose.yml
+              echo "      mysql:" >> docker-compose.yml
+              echo "        condition: service_healthy" >> docker-compose.yml
+              echo "    networks:" >> docker-compose.yml
+              echo "      - petclinic-network" >> docker-compose.yml
+              echo "" >> docker-compose.yml
+              echo "  prometheus:" >> docker-compose.yml
+              echo "    image: prom/prometheus:latest" >> docker-compose.yml
+              echo "    container_name: prometheus" >> docker-compose.yml
+              echo "    ports:" >> docker-compose.yml
+              echo "      - \"9090:9090\"" >> docker-compose.yml
+              echo "    volumes:" >> docker-compose.yml
+              echo "      - ./prometheus.yml:/etc/prometheus/prometheus.yml" >> docker-compose.yml
+              echo "      - prometheus_data:/prometheus" >> docker-compose.yml
+              echo "    command:" >> docker-compose.yml
+              echo "      - '--config.file=/etc/prometheus/prometheus.yml'" >> docker-compose.yml
+              echo "      - '--storage.tsdb.path=/prometheus'" >> docker-compose.yml
+              echo "      - '--web.console.libraries=/etc/prometheus/console_libraries'" >> docker-compose.yml
+              echo "      - '--web.console.templates=/etc/prometheus/consoles'" >> docker-compose.yml
+              echo "      - '--storage.tsdb.retention.time=200h'" >> docker-compose.yml
+              echo "      - '--web.enable-lifecycle'" >> docker-compose.yml
+              echo "    networks:" >> docker-compose.yml
+              echo "      - petclinic-network" >> docker-compose.yml
+              echo "" >> docker-compose.yml
+              echo "  grafana:" >> docker-compose.yml
+              echo "    image: grafana/grafana:latest" >> docker-compose.yml
+              echo "    container_name: grafana" >> docker-compose.yml
+              echo "    ports:" >> docker-compose.yml
+              echo "      - \"3000:3000\"" >> docker-compose.yml
+              echo "    environment:" >> docker-compose.yml
+              echo "      - GF_SECURITY_ADMIN_PASSWORD=admin123" >> docker-compose.yml
+              echo "    volumes:" >> docker-compose.yml
+              echo "      - grafana_data:/var/lib/grafana" >> docker-compose.yml
+              echo "    networks:" >> docker-compose.yml
+              echo "      - petclinic-network" >> docker-compose.yml
+              echo "" >> docker-compose.yml
+              echo "  node-exporter:" >> docker-compose.yml
+              echo "    image: prom/node-exporter:latest" >> docker-compose.yml
+              echo "    container_name: node-exporter" >> docker-compose.yml
+              echo "    ports:" >> docker-compose.yml
+              echo "      - \"9100:9100\"" >> docker-compose.yml
+              echo "    networks:" >> docker-compose.yml
+              echo "      - petclinic-network" >> docker-compose.yml
+              echo "" >> docker-compose.yml
+              echo "volumes:" >> docker-compose.yml
+              echo "  mysql_data:" >> docker-compose.yml
+              echo "  prometheus_data:" >> docker-compose.yml
+              echo "  grafana_data:" >> docker-compose.yml
+              echo "" >> docker-compose.yml
+              echo "networks:" >> docker-compose.yml
+              echo "  petclinic-network:" >> docker-compose.yml
+              echo "    driver: bridge" >> docker-compose.yml
+              
               echo "docker-compose.yml created successfully"
           fi
 
@@ -569,25 +569,26 @@ EOF
         run: |
           if [ ! -f "prometheus.yml" ]; then
               echo "Creating prometheus.yml..."
-              cat > prometheus.yml << 'EOF'
-global:
-  scrape_interval: 15s
-
-scrape_configs:
-  - job_name: 'petclinic'
-    static_configs:
-      - targets: ['petclinic-app:8080']
-    metrics_path: '/actuator/prometheus'
-    scrape_interval: 5s
-
-  - job_name: 'node-exporter'
-    static_configs:
-      - targets: ['node-exporter:9100']
-
-  - job_name: 'prometheus'
-    static_configs:
-      - targets: ['localhost:9090']
-EOF
+              
+              # Create prometheus.yml using echo commands
+              echo "global:" > prometheus.yml
+              echo "  scrape_interval: 15s" >> prometheus.yml
+              echo "" >> prometheus.yml
+              echo "scrape_configs:" >> prometheus.yml
+              echo "  - job_name: 'petclinic'" >> prometheus.yml
+              echo "    static_configs:" >> prometheus.yml
+              echo "      - targets: ['petclinic-app:8080']" >> prometheus.yml
+              echo "    metrics_path: '/actuator/prometheus'" >> prometheus.yml
+              echo "    scrape_interval: 5s" >> prometheus.yml
+              echo "" >> prometheus.yml
+              echo "  - job_name: 'node-exporter'" >> prometheus.yml
+              echo "    static_configs:" >> prometheus.yml
+              echo "      - targets: ['node-exporter:9100']" >> prometheus.yml
+              echo "" >> prometheus.yml
+              echo "  - job_name: 'prometheus'" >> prometheus.yml
+              echo "    static_configs:" >> prometheus.yml
+              echo "      - targets: ['localhost:9090']" >> prometheus.yml
+              
               echo "prometheus.yml created successfully"
           fi
 
