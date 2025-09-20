@@ -59,6 +59,49 @@ jobs:
           
           echo "Environment setup completed!"
 
+      - name: Setup Spring PetClinic Project
+        run: |
+          echo "Setting up Spring PetClinic project..."
+          
+          # Check if we have Java source files
+          FOUND_JAVA=$(find . -name "*.java" -type f 2>/dev/null | head -5)
+          FOUND_POM=$(find . -name "pom.xml" -type f 2>/dev/null | head -5)
+          FOUND_GRADLE=$(find . -name "build.gradle*" -type f 2>/dev/null | head -5)
+          
+          if [ -n "$FOUND_JAVA" ] || [ -n "$FOUND_POM" ] || [ -n "$FOUND_GRADLE" ]; then
+              echo "Found existing Java project files"
+          else
+              echo "No Java project found. Downloading Spring PetClinic..."
+              
+              # Clone the official Spring PetClinic project
+              git clone https://github.com/spring-projects/spring-petclinic.git temp-petclinic
+              
+              # Create src directory structure in petclinic-project
+              mkdir -p petclinic-project/src
+              
+              # Copy the Java project files to petclinic-project
+              if [ -d "temp-petclinic" ]; then
+                  cp -r temp-petclinic/src petclinic-project/
+                  cp temp-petclinic/pom.xml petclinic-project/
+                  cp temp-petclinic/mvnw petclinic-project/
+                  cp temp-petclinic/mvnw.cmd petclinic-project/
+                  cp -r temp-petclinic/.mvn petclinic-project/
+                  
+                  # Copy additional files if they exist
+                  [ -f "temp-petclinic/README.md" ] && cp temp-petclinic/README.md petclinic-project/README-petclinic.md
+                  
+                  # Remove temporary directory
+                  rm -rf temp-petclinic
+                  
+                  echo "Spring PetClinic project has been set up in petclinic-project/"
+              else
+                  echo "Failed to download Spring PetClinic project"
+                  exit 1
+              fi
+          fi
+          
+          echo "Project setup completed!"
+
       - name: Workspace Verification
         run: |
           echo "Verifying workspace structure..."
@@ -66,11 +109,8 @@ jobs:
           ls -la
           
           echo ""
-          echo "Exploring petclinic-project structure:"
+          echo "petclinic-project directory contents:"
           if [ -d "petclinic-project" ]; then
-              find petclinic-project -type f -name "*.xml" -o -name "mvnw" -o -name "build.gradle" | head -20
-              echo ""
-              echo "petclinic-project directory contents:"
               ls -la petclinic-project/
           fi
           
@@ -79,6 +119,7 @@ jobs:
           FOUND_POM=$(find . -name "pom.xml" -type f 2>/dev/null | head -5)
           FOUND_GRADLE=$(find . -name "build.gradle*" -type f 2>/dev/null | head -5)
           FOUND_MVN_WRAPPER=$(find . -name "mvnw" -type f 2>/dev/null | head -5)
+          FOUND_JAVA=$(find . -name "*.java" -type f 2>/dev/null | head -10)
           
           if [ -n "$FOUND_POM" ]; then
               echo "Found pom.xml files:"
@@ -105,9 +146,15 @@ jobs:
               echo "BUILD_DIR=$WRAPPER_DIR" >> $GITHUB_ENV
               echo "PROJECT_TYPE=maven" >> $GITHUB_ENV
           else
-              echo "No Java build files (pom.xml, build.gradle, or mvnw) found in the repository"
-              echo "Repository structure might not contain a Java project"
+              echo "No Java build files found even after setup attempt"
+              echo "This might indicate a repository structure issue"
               exit 1
+          fi
+          
+          if [ -n "$FOUND_JAVA" ]; then
+              echo ""
+              echo "Found Java source files:"
+              echo "$FOUND_JAVA"
           fi
           
           echo ""
@@ -120,8 +167,12 @@ jobs:
               echo "Using docker-compose.yml from: $FIRST_COMPOSE"
               echo "COMPOSE_FILE=$FIRST_COMPOSE" >> $GITHUB_ENV
           else
-              echo "No docker-compose.yml found - will need to create deployment configuration"
-              echo "COMPOSE_FILE=" >> $GITHUB_ENV
+              echo "No docker-compose.yml found - will use the one in petclinic-project if available"
+              if [ -f "petclinic-project/docker-compose.yml" ]; then
+                  echo "COMPOSE_FILE=petclinic-project/docker-compose.yml" >> $GITHUB_ENV
+              else
+                  echo "COMPOSE_FILE=" >> $GITHUB_ENV
+              fi
           fi
           
           echo ""
@@ -297,11 +348,63 @@ jobs:
       - name: Checkout Repository
         uses: actions/checkout@v4
 
-      - name: Download Build Artifacts
-        uses: actions/download-artifact@v4
-        with:
-          name: petclinic-jar
-          path: .
+      - name: Prepare Docker Build
+        run: |
+          echo "Preparing Docker build environment..."
+          BUILD_PATH="${BUILD_DIR:-./}"
+          cd "$BUILD_PATH"
+          
+          # Check if Dockerfile exists
+          if [ ! -f "Dockerfile" ]; then
+              echo "Creating Dockerfile for Spring Boot application..."
+              
+              # Create a proper Dockerfile for Spring Boot
+              echo "# Use OpenJDK 17" > Dockerfile
+              echo "FROM openjdk:17-jdk-slim" >> Dockerfile
+              echo "" >> Dockerfile
+              echo "# Set working directory" >> Dockerfile
+              echo "WORKDIR /app" >> Dockerfile
+              echo "" >> Dockerfile
+              echo "# Copy Maven wrapper and pom.xml" >> Dockerfile
+              echo "COPY mvnw ." >> Dockerfile
+              echo "COPY .mvn .mvn" >> Dockerfile
+              echo "COPY pom.xml ." >> Dockerfile
+              echo "" >> Dockerfile
+              echo "# Download dependencies" >> Dockerfile
+              echo "RUN chmod +x ./mvnw" >> Dockerfile
+              echo "RUN ./mvnw dependency:go-offline" >> Dockerfile
+              echo "" >> Dockerfile
+              echo "# Copy source code" >> Dockerfile
+              echo "COPY src ./src" >> Dockerfile
+              echo "" >> Dockerfile
+              echo "# Build application" >> Dockerfile
+              echo "RUN ./mvnw package -DskipTests" >> Dockerfile
+              echo "" >> Dockerfile
+              echo "# Expose port" >> Dockerfile
+              echo "EXPOSE 8080" >> Dockerfile
+              echo "" >> Dockerfile
+              echo "# Run application" >> Dockerfile
+              echo "CMD [\"java\", \"-jar\", \"target/*.jar\"]" >> Dockerfile
+              
+              echo "Created Dockerfile for Spring Boot application"
+          else
+              echo "Dockerfile already exists"
+          fi
+          
+          # Verify JAR file exists from previous build
+          if [ -f "target/*.jar" ] || ls target/*.jar 1> /dev/null 2>&1; then
+              echo "JAR file found in target directory"
+              JAR_FILE=$(ls target/*.jar | grep -v sources | grep -v javadoc | head -1)
+              if [ -n "$JAR_FILE" ]; then
+                  echo "Using JAR file: $JAR_FILE"
+                  # Update Dockerfile to use specific JAR file
+                  sed -i "s|target/\*.jar|$JAR_FILE|g" Dockerfile
+              fi
+          else
+              echo "No JAR file found - will be built during Docker build"
+          fi
+          
+          echo "Docker build preparation completed"
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
