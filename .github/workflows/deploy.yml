@@ -73,13 +73,17 @@ jobs:
               if [ -n "$FOUND_POM" ]; then
                   FIRST_POM=$(echo "$FOUND_POM" | head -1)
                   POM_DIR=$(dirname "$FIRST_POM")
+                  echo "Setting BUILD_DIR=$POM_DIR"
                   echo "BUILD_DIR=$POM_DIR" >> $GITHUB_ENV
                   echo "PROJECT_TYPE=maven" >> $GITHUB_ENV
+                  echo "BUILD_DIR set to: $POM_DIR"
               elif [ -n "$FOUND_GRADLE" ]; then
                   FIRST_GRADLE=$(echo "$FOUND_GRADLE" | head -1)
                   GRADLE_DIR=$(dirname "$FIRST_GRADLE")
+                  echo "Setting BUILD_DIR=$GRADLE_DIR"
                   echo "BUILD_DIR=$GRADLE_DIR" >> $GITHUB_ENV
                   echo "PROJECT_TYPE=gradle" >> $GITHUB_ENV
+                  echo "BUILD_DIR set to: $GRADLE_DIR"
               fi
           else
               echo "No Java project found. Downloading Spring PetClinic..."
@@ -105,8 +109,14 @@ jobs:
                   rm -rf temp-petclinic
                   
                   echo "Spring PetClinic project has been set up in petclinic-project/"
+                  echo "Setting BUILD_DIR=petclinic-project"
                   echo "BUILD_DIR=petclinic-project" >> $GITHUB_ENV
                   echo "PROJECT_TYPE=maven" >> $GITHUB_ENV
+                  echo "BUILD_DIR set to: petclinic-project"
+                  
+                  # Verify the files were copied correctly
+                  echo "Verifying copied files:"
+                  ls -la petclinic-project/
               else
                   echo "Failed to download Spring PetClinic project"
                   exit 1
@@ -121,6 +131,12 @@ jobs:
           else
               echo "COMPOSE_FILE=" >> $GITHUB_ENV
           fi
+          
+          # Debug: Show what was written to GITHUB_ENV
+          echo ""
+          echo "Environment variables set:"
+          echo "BUILD_DIR: $(grep BUILD_DIR $GITHUB_ENV || echo 'not found')"
+          echo "PROJECT_TYPE: $(grep PROJECT_TYPE $GITHUB_ENV || echo 'not found')"
           
           echo "Project setup completed!"
 
@@ -351,15 +367,45 @@ jobs:
         run: |
           echo "Preparing Docker build environment..."
           
+          # Debug: Show current environment variables
+          echo "Current environment variables:"
+          echo "BUILD_DIR: ${BUILD_DIR:-not set}"
+          echo "PROJECT_TYPE: ${PROJECT_TYPE:-not set}"
+          echo "COMPOSE_FILE: ${COMPOSE_FILE:-not set}"
+          
+          # If BUILD_DIR is not set, try to find it
           if [ -z "${BUILD_DIR}" ]; then
-              echo "ERROR: BUILD_DIR environment variable not set"
-              echo "This should have been set in the Setup Spring PetClinic Project step"
-              exit 1
+              echo "BUILD_DIR not set, attempting to find project directory..."
+              
+              # Look for pom.xml files
+              FOUND_POM=$(find . -name "pom.xml" -type f 2>/dev/null | head -1)
+              if [ -n "$FOUND_POM" ]; then
+                  BUILD_PATH=$(dirname "$FOUND_POM")
+                  echo "Found pom.xml at: $FOUND_POM"
+                  echo "Setting BUILD_DIR to: $BUILD_PATH"
+                  echo "BUILD_DIR=$BUILD_PATH" >> $GITHUB_ENV
+                  export BUILD_DIR="$BUILD_PATH"
+              else
+                  echo "ERROR: No pom.xml found anywhere in repository"
+                  echo "Repository contents:"
+                  find . -maxdepth 3 -type f -name "*.xml" -o -name "*.gradle" -o -name "mvnw" | head -10
+                  exit 1
+              fi
           fi
           
           BUILD_PATH="${BUILD_DIR}"
-          echo "Build directory: $BUILD_PATH"
+          echo "Using build directory: $BUILD_PATH"
+          
+          # Navigate to build directory
+          if [ ! -d "$BUILD_PATH" ]; then
+              echo "ERROR: Build directory does not exist: $BUILD_PATH"
+              echo "Available directories:"
+              ls -la
+              exit 1
+          fi
+          
           cd "$BUILD_PATH"
+          echo "Changed to directory: $(pwd)"
           
           # List current directory contents
           echo "Current directory contents:"
@@ -375,11 +421,15 @@ jobs:
           # Check if essential files exist
           if [ ! -f "pom.xml" ]; then
               echo "ERROR: pom.xml not found in build directory: $(pwd)"
+              echo "Contents of current directory:"
+              ls -la
               exit 1
           fi
           
           if [ ! -d "src" ]; then
               echo "ERROR: src directory not found in build directory: $(pwd)"
+              echo "Looking for src directories:"
+              find . -name "src" -type d
               exit 1
           fi
           
