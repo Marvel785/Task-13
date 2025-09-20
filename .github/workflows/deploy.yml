@@ -372,44 +372,44 @@ jobs:
               echo "No docker-compose.yml found, creating basic configuration..."
               COMPOSE_FILE="docker-compose.yml"
               
-              cat > docker-compose.yml << 'COMPOSE_EOF'
-version: '3.8'
-
-services:
-  mysql:
-    image: mysql:8.0
-    container_name: mysql
-    environment:
-      MYSQL_ROOT_PASSWORD: petclinic
-      MYSQL_DATABASE: petclinic
-    ports:
-      - "3306:3306"
-    volumes:
-      - mysql_data:/var/lib/mysql
-    healthcheck:
-      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
-      timeout: 20s
-      retries: 10
-
-  petclinic-app:
-    build:
-      context: .
-      dockerfile: Dockerfile
-    container_name: petclinic-app
-    ports:
-      - "9500:8080"
-    environment:
-      - SPRING_PROFILES_ACTIVE=mysql
-      - SPRING_DATASOURCE_URL=jdbc:mysql://mysql:3306/petclinic
-      - SPRING_DATASOURCE_USERNAME=root
-      - SPRING_DATASOURCE_PASSWORD=petclinic
-    depends_on:
-      mysql:
-        condition: service_healthy
-
-volumes:
-  mysql_data:
-COMPOSE_EOF
+              # Create docker-compose.yml using echo commands
+              echo "version: '3.8'" > docker-compose.yml
+              echo "" >> docker-compose.yml
+              echo "services:" >> docker-compose.yml
+              echo "  mysql:" >> docker-compose.yml
+              echo "    image: mysql:8.0" >> docker-compose.yml
+              echo "    container_name: mysql" >> docker-compose.yml
+              echo "    environment:" >> docker-compose.yml
+              echo "      MYSQL_ROOT_PASSWORD: petclinic" >> docker-compose.yml
+              echo "      MYSQL_DATABASE: petclinic" >> docker-compose.yml
+              echo "    ports:" >> docker-compose.yml
+              echo "      - \"3306:3306\"" >> docker-compose.yml
+              echo "    volumes:" >> docker-compose.yml
+              echo "      - mysql_data:/var/lib/mysql" >> docker-compose.yml
+              echo "    healthcheck:" >> docker-compose.yml
+              echo "      test: [\"CMD\", \"mysqladmin\", \"ping\", \"-h\", \"localhost\"]" >> docker-compose.yml
+              echo "      timeout: 20s" >> docker-compose.yml
+              echo "      retries: 10" >> docker-compose.yml
+              echo "" >> docker-compose.yml
+              echo "  petclinic-app:" >> docker-compose.yml
+              echo "    build:" >> docker-compose.yml
+              echo "      context: ." >> docker-compose.yml
+              echo "      dockerfile: Dockerfile" >> docker-compose.yml
+              echo "    container_name: petclinic-app" >> docker-compose.yml
+              echo "    ports:" >> docker-compose.yml
+              echo "      - \"9500:8080\"" >> docker-compose.yml
+              echo "    environment:" >> docker-compose.yml
+              echo "      - SPRING_PROFILES_ACTIVE=mysql" >> docker-compose.yml
+              echo "      - SPRING_DATASOURCE_URL=jdbc:mysql://mysql:3306/petclinic" >> docker-compose.yml
+              echo "      - SPRING_DATASOURCE_USERNAME=root" >> docker-compose.yml
+              echo "      - SPRING_DATASOURCE_PASSWORD=petclinic" >> docker-compose.yml
+              echo "    depends_on:" >> docker-compose.yml
+              echo "      mysql:" >> docker-compose.yml
+              echo "        condition: service_healthy" >> docker-compose.yml
+              echo "" >> docker-compose.yml
+              echo "volumes:" >> docker-compose.yml
+              echo "  mysql_data:" >> docker-compose.yml
+              
               echo "Created basic docker-compose.yml"
           fi
           
