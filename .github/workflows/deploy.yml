@@ -312,7 +312,7 @@ jobs:
         mkdir -p grafana/provisioning/dashboards
         mkdir -p prometheus/data grafana/data mysql/data
         
-        cat > alertmanager.yml << 'EOF'
+        cat > alertmanager.yml <<EOF
 global:
   smtp_from: alertmanager@localhost
   smtp_smarthost: localhost:587
@@ -422,20 +422,20 @@ EOF
         echo ""
         echo "Service Endpoints:"
         echo "PetClinic Application: http://localhost:9500"
-        echo "   └─ Health Check: http://localhost:9500/actuator/health"
-        echo "   └─ Metrics: http://localhost:9500/actuator/prometheus"
+        echo "Health Check: http://localhost:9500/actuator/health"
+        echo "Metrics: http://localhost:9500/actuator/prometheus"
         echo "Grafana Dashboard: http://localhost:3000"
-        echo "   └─ Default Login: admin/admin123"
+        echo "Default Login: admin/admin123"
         echo "Prometheus Metrics: http://localhost:9090"
-        echo "   └─ Targets: http://localhost:9090/targets"
+        echo "Targets: http://localhost:9090/targets"
         echo "Node Exporter: http://localhost:9100/metrics"
         echo "MySQL Database: localhost:3306"
         
         echo ""
         echo "Management Commands:"
-        echo "• View logs: docker-compose logs [service-name]"
-        echo "• Stop services: docker-compose down"
-        echo "• Restart service: docker-compose restart [service-name]"
+        echo "View logs: docker-compose logs [service-name]"
+        echo "Stop services: docker-compose down"
+        echo "Restart service: docker-compose restart [service-name]"
         
         echo ""
         echo "DEPLOYMENT COMPLETED SUCCESSFULLY!"
