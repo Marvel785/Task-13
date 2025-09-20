@@ -392,8 +392,8 @@ EOF
         echo "Starting health checks..."
         
         # Check PetClinic application
-        check_service "PetClinic App" "http://localhost:8080/actuator/health" 20 "UP" || \
-        check_service "PetClinic App (fallback)" "http://localhost:8080" 10 "PetClinic" || \
+        check_service "PetClinic App" "http://localhost:9500/actuator/health" 20 "UP" || \
+        check_service "PetClinic App (fallback)" "http://localhost:9500" 10 "PetClinic" || \
         echo "PetClinic app check completed with warnings"
         
         # Check Prometheus
@@ -441,9 +441,9 @@ EOF
         
         echo ""
         echo "Service Endpoints:"
-        echo "PetClinic Application: http://localhost:8080"
-        echo "   └─ Health Check: http://localhost:8080/actuator/health"
-        echo "   └─ Metrics: http://localhost:8080/actuator/prometheus"
+        echo "PetClinic Application: http://localhost:9500"
+        echo "   └─ Health Check: http://localhost:9500/actuator/health"
+        echo "   └─ Metrics: http://localhost:9500/actuator/prometheus"
         echo "Grafana Dashboard: http://localhost:3000"
         echo "   └─ Default Login: admin/admin123"
         echo "Prometheus Metrics: http://localhost:9090"
@@ -520,7 +520,7 @@ EOF
             echo "Node Exporter: COLLECTING METRICS"
             echo ""
             echo "Quick Access URLs:"
-            echo "• Application: http://localhost:8080"
+            echo "• Application: http://localhost:9500"
             echo "• Monitoring: http://localhost:3000 (admin/admin123)"
             echo "• Metrics: http://localhost:9090"
         elif [ "${{ needs.docker-build-and-deploy.result }}" == "failure" ]; then
@@ -528,7 +528,7 @@ EOF
             echo "DEPLOYMENT FAILED - Check the logs for details"
             echo ""
             echo "Common Issues:"
-            echo "1. Port conflicts - Check if ports 8080, 3000, 9090, 3306 are available"
+            echo "1. Port conflicts - Check if ports 9500, 3000, 9090, 3306 are available"
             echo "2. Docker resources - Try 'docker system prune -f'"
             echo "3. Memory issues - Check available memory"
             echo "4. Configuration errors - Verify docker-compose.yml syntax"
