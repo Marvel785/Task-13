@@ -65,45 +65,66 @@ jobs:
           echo "Repository contents:"
           ls -la
           
-          if [ -f "pom.xml" ]; then
-              echo "Found pom.xml in repository root"
-          elif [ -f "petclinic-project/pom.xml" ]; then
-              echo "Found pom.xml in petclinic-project directory"
-              echo "BUILD_DIR=petclinic-project" >> $GITHUB_ENV
-          elif [ -f "petclinic-build/pom.xml" ]; then
-              echo "Found pom.xml in petclinic-build directory"
-              echo "BUILD_DIR=petclinic-build" >> $GITHUB_ENV
-          else
-              echo "pom.xml not found"
-              # Try to find pom.xml anywhere in the repository
-              FOUND_POM=$(find . -name "pom.xml" -type f 2>/dev/null | head -1)
-              if [ -n "$FOUND_POM" ]; then
-                  POM_DIR=$(dirname "$FOUND_POM")
-                  echo "Found pom.xml at: $FOUND_POM"
-                  echo "BUILD_DIR=$POM_DIR" >> $GITHUB_ENV
-              else
-                  echo "No pom.xml found anywhere in the repository"
-                  exit 1
-              fi
+          echo ""
+          echo "Exploring petclinic-project structure:"
+          if [ -d "petclinic-project" ]; then
+              find petclinic-project -type f -name "*.xml" -o -name "mvnw" -o -name "build.gradle" | head -20
+              echo ""
+              echo "petclinic-project directory contents:"
+              ls -la petclinic-project/
           fi
           
-          if [ -f "docker-compose.yml" ]; then
-              echo "Found docker-compose.yml in repository root"
-          elif [ -f "petclinic-project/docker-compose.yml" ]; then
-              echo "Found docker-compose.yml in petclinic-project directory"
-              echo "COMPOSE_FILE=petclinic-project/docker-compose.yml" >> $GITHUB_ENV
+          echo ""
+          echo "Searching for Java project files..."
+          FOUND_POM=$(find . -name "pom.xml" -type f 2>/dev/null | head -5)
+          FOUND_GRADLE=$(find . -name "build.gradle*" -type f 2>/dev/null | head -5)
+          FOUND_MVN_WRAPPER=$(find . -name "mvnw" -type f 2>/dev/null | head -5)
+          
+          if [ -n "$FOUND_POM" ]; then
+              echo "Found pom.xml files:"
+              echo "$FOUND_POM"
+              FIRST_POM=$(echo "$FOUND_POM" | head -1)
+              POM_DIR=$(dirname "$FIRST_POM")
+              echo "Using pom.xml from: $FIRST_POM"
+              echo "BUILD_DIR=$POM_DIR" >> $GITHUB_ENV
+              echo "PROJECT_TYPE=maven" >> $GITHUB_ENV
+          elif [ -n "$FOUND_GRADLE" ]; then
+              echo "Found build.gradle files:"
+              echo "$FOUND_GRADLE"
+              FIRST_GRADLE=$(echo "$FOUND_GRADLE" | head -1)
+              GRADLE_DIR=$(dirname "$FIRST_GRADLE")
+              echo "Using build.gradle from: $FIRST_GRADLE"
+              echo "BUILD_DIR=$GRADLE_DIR" >> $GITHUB_ENV
+              echo "PROJECT_TYPE=gradle" >> $GITHUB_ENV
+          elif [ -n "$FOUND_MVN_WRAPPER" ]; then
+              echo "Found Maven wrapper files:"
+              echo "$FOUND_MVN_WRAPPER"
+              FIRST_WRAPPER=$(echo "$FOUND_MVN_WRAPPER" | head -1)
+              WRAPPER_DIR=$(dirname "$FIRST_WRAPPER")
+              echo "Using Maven wrapper from: $FIRST_WRAPPER"
+              echo "BUILD_DIR=$WRAPPER_DIR" >> $GITHUB_ENV
+              echo "PROJECT_TYPE=maven" >> $GITHUB_ENV
           else
-              echo "docker-compose.yml not found in expected locations"
-              FOUND_COMPOSE=$(find . -name "docker-compose.yml" -type f 2>/dev/null | head -1)
-              if [ -n "$FOUND_COMPOSE" ]; then
-                  echo "Found docker-compose.yml at: $FOUND_COMPOSE"
-                  echo "COMPOSE_FILE=$FOUND_COMPOSE" >> $GITHUB_ENV
-              else
-                  echo "No docker-compose.yml found anywhere in the repository"
-                  exit 1
-              fi
+              echo "No Java build files (pom.xml, build.gradle, or mvnw) found in the repository"
+              echo "Repository structure might not contain a Java project"
+              exit 1
           fi
           
+          echo ""
+          echo "Searching for docker-compose.yml..."
+          FOUND_COMPOSE=$(find . -name "docker-compose.yml" -type f 2>/dev/null | head -5)
+          if [ -n "$FOUND_COMPOSE" ]; then
+              echo "Found docker-compose.yml files:"
+              echo "$FOUND_COMPOSE"
+              FIRST_COMPOSE=$(echo "$FOUND_COMPOSE" | head -1)
+              echo "Using docker-compose.yml from: $FIRST_COMPOSE"
+              echo "COMPOSE_FILE=$FIRST_COMPOSE" >> $GITHUB_ENV
+          else
+              echo "No docker-compose.yml found - will need to create deployment configuration"
+              echo "COMPOSE_FILE=" >> $GITHUB_ENV
+          fi
+          
+          echo ""
           echo "Workspace verification completed!"
 
       - name: Environment Tools Check
@@ -180,13 +201,24 @@ jobs:
           cd "$BUILD_PATH"
           echo "Working in: $(pwd)"
           
-          if [ -f "mvnw" ]; then
-              chmod +x mvnw
-              echo "Using Maven wrapper..."
-              ./mvnw clean compile -DskipTests -Dmaven.test.skip=true
+          if [ "${PROJECT_TYPE}" = "gradle" ]; then
+              echo "Building with Gradle..."
+              if [ -f "gradlew" ]; then
+                  chmod +x gradlew
+                  ./gradlew clean build -x test
+              else
+                  gradle clean build -x test
+              fi
           else
-              echo "Using system Maven..."
-              mvn clean compile -DskipTests -Dmaven.test.skip=true
+              echo "Building with Maven..."
+              if [ -f "mvnw" ]; then
+                  chmod +x mvnw
+                  echo "Using Maven wrapper..."
+                  ./mvnw clean compile -DskipTests -Dmaven.test.skip=true
+              else
+                  echo "Using system Maven..."
+                  mvn clean compile -DskipTests -Dmaven.test.skip=true
+              fi
           fi
           
           echo "Application compiled successfully"
@@ -197,10 +229,20 @@ jobs:
           BUILD_PATH="${BUILD_DIR:-./}"
           cd "$BUILD_PATH"
           
-          if [ -x "./mvnw" ]; then
-              ./mvnw test -Dtest="!PostgresIntegrationTests" -Dspring.docker.compose.skip.in-tests=true
+          if [ "${PROJECT_TYPE}" = "gradle" ]; then
+              echo "Running tests with Gradle..."
+              if [ -x "./gradlew" ]; then
+                  ./gradlew test --exclude-task postgresIntegrationTests
+              else
+                  gradle test --exclude-task postgresIntegrationTests
+              fi
           else
-              mvn test -Dtest="!PostgresIntegrationTests" -Dspring.docker.compose.skip.in-tests=true
+              echo "Running tests with Maven..."
+              if [ -x "./mvnw" ]; then
+                  ./mvnw test -Dtest="!PostgresIntegrationTests" -Dspring.docker.compose.skip.in-tests=true
+              else
+                  mvn test -Dtest="!PostgresIntegrationTests" -Dspring.docker.compose.skip.in-tests=true
+              fi
           fi
           
           echo "Tests completed successfully"
@@ -211,15 +253,27 @@ jobs:
           BUILD_PATH="${BUILD_DIR:-./}"
           cd "$BUILD_PATH"
           
-          if [ -x "./mvnw" ]; then
-              ./mvnw package -DskipTests
+          if [ "${PROJECT_TYPE}" = "gradle" ]; then
+              echo "Packaging with Gradle..."
+              if [ -x "./gradlew" ]; then
+                  ./gradlew bootJar -x test
+              else
+                  gradle bootJar -x test
+              fi
+              echo "Generated artifacts:"
+              ls -la build/libs/*.jar 2>/dev/null || echo "No JAR files found in build/libs"
           else
-              mvn package -DskipTests
+              echo "Packaging with Maven..."
+              if [ -x "./mvnw" ]; then
+                  ./mvnw package -DskipTests
+              else
+                  mvn package -DskipTests
+              fi
+              echo "Generated artifacts:"
+              ls -la target/*.jar 2>/dev/null || echo "No JAR files found in target"
           fi
           
           echo "Application packaged successfully"
-          echo "Generated artifacts:"
-          ls -la target/*.jar 2>/dev/null || echo "No JAR files found"
 
       - name: Upload Build Artifacts
         uses: actions/upload-artifact@v4
@@ -227,8 +281,11 @@ jobs:
           name: petclinic-jar
           path: |
             **/target/*.jar
+            **/build/libs/*.jar
             !**/target/*-sources.jar
             !**/target/*-javadoc.jar
+            !**/build/libs/*-sources.jar
+            !**/build/libs/*-javadoc.jar
           retention-days: 30
 
   docker-build-and-deploy:
@@ -307,11 +364,53 @@ jobs:
           
           COMPOSE_FILE_PATH="${COMPOSE_FILE:-docker-compose.yml}"
           
-          if [ -f "$COMPOSE_FILE_PATH" ]; then
+          if [ -n "$COMPOSE_FILE_PATH" ] && [ -f "$COMPOSE_FILE_PATH" ]; then
               cd "$(dirname "$COMPOSE_FILE_PATH")"
               COMPOSE_FILE="$(basename "$COMPOSE_FILE_PATH")"
+              echo "Using existing Docker Compose file: $COMPOSE_FILE_PATH"
           else
+              echo "No docker-compose.yml found, creating basic configuration..."
               COMPOSE_FILE="docker-compose.yml"
+              
+              cat > docker-compose.yml << 'COMPOSE_EOF'
+version: '3.8'
+
+services:
+  mysql:
+    image: mysql:8.0
+    container_name: mysql
+    environment:
+      MYSQL_ROOT_PASSWORD: petclinic
+      MYSQL_DATABASE: petclinic
+    ports:
+      - "3306:3306"
+    volumes:
+      - mysql_data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
+      timeout: 20s
+      retries: 10
+
+  petclinic-app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: petclinic-app
+    ports:
+      - "9500:8080"
+    environment:
+      - SPRING_PROFILES_ACTIVE=mysql
+      - SPRING_DATASOURCE_URL=jdbc:mysql://mysql:3306/petclinic
+      - SPRING_DATASOURCE_USERNAME=root
+      - SPRING_DATASOURCE_PASSWORD=petclinic
+    depends_on:
+      mysql:
+        condition: service_healthy
+
+volumes:
+  mysql_data:
+COMPOSE_EOF
+              echo "Created basic docker-compose.yml"
           fi
           
           if [ -d "alertmanager.yml" ]; then
