@@ -67,12 +67,24 @@ jobs:
           
           if [ -f "pom.xml" ]; then
               echo "Found pom.xml in repository root"
+          elif [ -f "petclinic-project/pom.xml" ]; then
+              echo "Found pom.xml in petclinic-project directory"
+              echo "BUILD_DIR=petclinic-project" >> $GITHUB_ENV
           elif [ -f "petclinic-build/pom.xml" ]; then
               echo "Found pom.xml in petclinic-build directory"
               echo "BUILD_DIR=petclinic-build" >> $GITHUB_ENV
           else
               echo "pom.xml not found"
-              exit 1
+              # Try to find pom.xml anywhere in the repository
+              FOUND_POM=$(find . -name "pom.xml" -type f 2>/dev/null | head -1)
+              if [ -n "$FOUND_POM" ]; then
+                  POM_DIR=$(dirname "$FOUND_POM")
+                  echo "Found pom.xml at: $FOUND_POM"
+                  echo "BUILD_DIR=$POM_DIR" >> $GITHUB_ENV
+              else
+                  echo "No pom.xml found anywhere in the repository"
+                  exit 1
+              fi
           fi
           
           if [ -f "docker-compose.yml" ]; then
@@ -81,12 +93,13 @@ jobs:
               echo "Found docker-compose.yml in petclinic-project directory"
               echo "COMPOSE_FILE=petclinic-project/docker-compose.yml" >> $GITHUB_ENV
           else
-              echo "docker-compose.yml not found"
+              echo "docker-compose.yml not found in expected locations"
               FOUND_COMPOSE=$(find . -name "docker-compose.yml" -type f 2>/dev/null | head -1)
               if [ -n "$FOUND_COMPOSE" ]; then
                   echo "Found docker-compose.yml at: $FOUND_COMPOSE"
                   echo "COMPOSE_FILE=$FOUND_COMPOSE" >> $GITHUB_ENV
               else
+                  echo "No docker-compose.yml found anywhere in the repository"
                   exit 1
               fi
           fi
