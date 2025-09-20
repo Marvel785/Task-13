@@ -197,8 +197,25 @@ jobs:
           fi
           
           docker --version
-          docker-compose --version
-          echo "Docker and Docker Compose are available"
+          
+          # Check for docker compose (new) or docker-compose (legacy)
+          if docker compose version >/dev/null 2>&1; then
+              docker compose version
+              echo "Docker Compose (plugin) is available"
+              echo "COMPOSE_CMD=docker compose" >> $GITHUB_ENV
+          elif command -v docker-compose >/dev/null 2>&1; then
+              docker-compose --version
+              echo "Docker Compose (standalone) is available"
+              echo "COMPOSE_CMD=docker-compose" >> $GITHUB_ENV
+          else
+              echo "Docker Compose not found. Installing docker-compose..."
+              # Install docker-compose if not available
+              sudo curl -L "https://github.com/docker/compose/releases/download/v2.24.6/docker-compose-$(uname -s)-$(uname -m)" -o /usr/local/bin/docker-compose
+              sudo chmod +x /usr/local/bin/docker-compose
+              docker-compose --version
+              echo "Docker Compose installed successfully"
+              echo "COMPOSE_CMD=docker-compose" >> $GITHUB_ENV
+          fi
           
           echo "All required tools are available"
 
@@ -424,7 +441,9 @@ jobs:
         run: |
           echo "Cleaning up previous deployment..."
           
-          docker-compose down --remove-orphans --volumes --timeout 30 2>/dev/null || true
+          # Use the compose command we detected
+          COMPOSE="${COMPOSE_CMD:-docker compose}"
+          $COMPOSE down --remove-orphans --volumes --timeout 30 2>/dev/null || true
           
           echo "Cleaning up standalone containers..."
           docker stop prometheus grafana node-exporter mysql-exporter cadvisor petclinic-app mysql 2>/dev/null || true
@@ -439,6 +458,7 @@ jobs:
         run: |
           echo "Verifying Docker configuration..."
           
+          COMPOSE="${COMPOSE_CMD:-docker compose}"
           COMPOSE_FILE_PATH="${COMPOSE_FILE:-docker-compose.yml}"
           
           if [ -f "$COMPOSE_FILE_PATH" ]; then
@@ -448,15 +468,15 @@ jobs:
               echo "Using Docker Compose file: $COMPOSE_FILE"
               echo "In directory: $(pwd)"
               
-              if docker-compose -f "$COMPOSE_FILE" config >/dev/null 2>&1; then
+              if $COMPOSE -f "$COMPOSE_FILE" config >/dev/null 2>&1; then
                   echo "docker-compose.yml is valid"
               else
                   echo "docker-compose.yml has validation issues:"
-                  docker-compose -f "$COMPOSE_FILE" config || true
+                  $COMPOSE -f "$COMPOSE_FILE" config || true
               fi
               
               echo "Services defined:"
-              docker-compose -f "$COMPOSE_FILE" config --services 2>/dev/null || echo "Could not list services"
+              $COMPOSE -f "$COMPOSE_FILE" config --services 2>/dev/null || echo "Could not list services"
           fi
           
           echo "Docker configuration verified"
@@ -465,6 +485,7 @@ jobs:
         run: |
           echo "Deploying application stack..."
           
+          COMPOSE="${COMPOSE_CMD:-docker compose}"
           COMPOSE_FILE_PATH="${COMPOSE_FILE:-docker-compose.yml}"
           
           if [ -n "$COMPOSE_FILE_PATH" ] && [ -f "$COMPOSE_FILE_PATH" ]; then
@@ -548,10 +569,10 @@ jobs:
           chmod 644 alertmanager.yml
           
           echo "Building Docker images..."
-          docker-compose -f "$COMPOSE_FILE" build --no-cache
+          $COMPOSE -f "$COMPOSE_FILE" build --no-cache
           
           echo "Starting all services..."
-          docker-compose -f "$COMPOSE_FILE" up -d
+          $COMPOSE -f "$COMPOSE_FILE" up -d
           
           echo "Deployment completed"
 
@@ -622,6 +643,7 @@ jobs:
           echo "    DEPLOYMENT STATUS REPORT"
           echo "=========================================="
           
+          COMPOSE="${COMPOSE_CMD:-docker compose}"
           COMPOSE_FILE_PATH="${COMPOSE_FILE:-docker-compose.yml}"
           
           if [ -f "$COMPOSE_FILE_PATH" ]; then
@@ -629,7 +651,7 @@ jobs:
               COMPOSE_FILE="$(basename "$COMPOSE_FILE_PATH")"
               
               echo "Final Container Status:"
-              docker-compose -f "$COMPOSE_FILE" ps
+              $COMPOSE -f "$COMPOSE_FILE" ps
           fi
           
           echo ""
@@ -646,9 +668,9 @@ jobs:
           
           echo ""
           echo "Management Commands:"
-          echo "View logs: docker-compose logs [service-name]"
-          echo "Stop services: docker-compose down"
-          echo "Restart service: docker-compose restart [service-name]"
+          echo "View logs: ${COMPOSE_CMD:-docker compose} logs [service-name]"
+          echo "Stop services: ${COMPOSE_CMD:-docker compose} down"
+          echo "Restart service: ${COMPOSE_CMD:-docker compose} restart [service-name]"
           
           echo ""
           echo "DEPLOYMENT COMPLETED SUCCESSFULLY!"
@@ -659,11 +681,12 @@ jobs:
           echo "Collecting deployment logs..."
           mkdir -p logs
           
+          COMPOSE="${COMPOSE_CMD:-docker compose}"
           COMPOSE_FILE_PATH="${COMPOSE_FILE:-docker-compose.yml}"
           if [ -f "$COMPOSE_FILE_PATH" ]; then
               cd "$(dirname "$COMPOSE_FILE_PATH")"
               COMPOSE_FILE="$(basename "$COMPOSE_FILE_PATH")"
-              docker-compose -f "$COMPOSE_FILE" logs > "$GITHUB_WORKSPACE/logs/docker-compose.log" 2>&1 || true
+              $COMPOSE -f "$COMPOSE_FILE" logs > "$GITHUB_WORKSPACE/logs/docker-compose.log" 2>&1 || true
           fi
           
           docker logs petclinic-app > logs/petclinic-app.log 2>&1 || true
