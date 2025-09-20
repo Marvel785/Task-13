@@ -288,83 +288,59 @@ jobs:
           
           echo "Docker configuration verified"
 
-    - name: Deploy Application Stack
-      run: |
-        echo "Deploying application stack..."
-        
-        COMPOSE_FILE_PATH="${COMPOSE_FILE:-docker-compose.yml}"
-        
-        if [ -f "$COMPOSE_FILE_PATH" ]; then
-            cd "$(dirname "$COMPOSE_FILE_PATH")"
-            COMPOSE_FILE="$(basename "$COMPOSE_FILE_PATH")"
-        else
-            COMPOSE_FILE="docker-compose.yml"
-        fi
-        
-        if [ -d "alertmanager.yml" ]; then
-            echo "Found directory instead of file: alertmanager.yml"
-            rm -rf alertmanager.yml
-            echo "Removed alertmanager.yml directory"
-        fi
-        
-        mkdir -p alertmanager
-        mkdir -p grafana/provisioning/datasources
-        mkdir -p grafana/provisioning/dashboards
-        mkdir -p prometheus/data grafana/data mysql/data
-        
-        cat > alertmanager.yml <<'EOF'
-        global:
-          smtp_from: alertmanager@localhost
-          smtp_smarthost: localhost:587
-          smtp_require_tls: false
+      - name: Deploy Application Stack
+        run: |
+          echo "Deploying application stack..."
+          
+          COMPOSE_FILE_PATH="${COMPOSE_FILE:-docker-compose.yml}"
+          
+          if [ -f "$COMPOSE_FILE_PATH" ]; then
+              cd "$(dirname "$COMPOSE_FILE_PATH")"
+              COMPOSE_FILE="$(basename "$COMPOSE_FILE_PATH")"
+          else
+              COMPOSE_FILE="docker-compose.yml"
+          fi
+          
+          if [ -d "alertmanager.yml" ]; then
+              echo "Found directory instead of file: alertmanager.yml"
+              rm -rf alertmanager.yml
+              echo "Removed alertmanager.yml directory"
+          fi
+          
+          mkdir -p alertmanager
+          mkdir -p grafana/provisioning/datasources
+          mkdir -p grafana/provisioning/dashboards
+          mkdir -p prometheus/data grafana/data mysql/data
+          
+          cat > alertmanager.yml <<'EOF'
+global:
+  smtp_from: alertmanager@localhost
+  smtp_smarthost: localhost:587
+  smtp_require_tls: false
 
-        route:
-          group_by: ['alertname']
-          receiver: 'default-receiver'
-<<<<<<< HEAD
+route:
+  group_by: ['alertname']
+  receiver: 'default-receiver'
 
-        receivers:
-          - name: 'default-receiver'
-            email_configs:
-              - to: 'admin@example.com'
-                send_resolved: true
-        EOF
-        
-        echo "Created alertmanager.yml configuration file"
-        
-        chmod -R 755 . 2>/dev/null || true
-        chmod 644 alertmanager.yml
-        
-        echo "Building Docker images..."
-        docker-compose -f "$COMPOSE_FILE" build --no-cache
-        
-        echo "Starting all services..."
-        docker-compose -f "$COMPOSE_FILE" up -d
-        
-        echo "Deployment completed"
-
-=======
-
-        receivers:
-          - name: 'default-receiver'
-            email_configs:
-              - to: 'admin@example.com'
-                send_resolved: true
-        EOF
-        
-        echo "Created alertmanager.yml configuration file"
-        
-        chmod -R 755 . 2>/dev/null || true
-        chmod 644 alertmanager.yml
-        
-        echo "Building Docker images..."
-        docker-compose -f "$COMPOSE_FILE" build --no-cache
-        
-        echo "Starting all services..."
-        docker-compose -f "$COMPOSE_FILE" up -d
-        
-        echo "Deployment completed"
->>>>>>> ea6473fc528c18563e27930b201b2973c560e871
+receivers:
+  - name: 'default-receiver'
+    email_configs:
+      - to: 'admin@example.com'
+        send_resolved: true
+EOF
+          
+          echo "Created alertmanager.yml configuration file"
+          
+          chmod -R 755 . 2>/dev/null || true
+          chmod 644 alertmanager.yml
+          
+          echo "Building Docker images..."
+          docker-compose -f "$COMPOSE_FILE" build --no-cache
+          
+          echo "Starting all services..."
+          docker-compose -f "$COMPOSE_FILE" up -d
+          
+          echo "Deployment completed"
 
       - name: Health Checks
         run: |
@@ -539,4 +515,3 @@ jobs:
           echo "=========================================="
           echo "    CLEANUP COMPLETED"
           echo "=========================================="
-
