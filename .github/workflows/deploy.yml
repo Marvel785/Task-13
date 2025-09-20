@@ -312,7 +312,7 @@ jobs:
         mkdir -p grafana/provisioning/dashboards
         mkdir -p prometheus/data grafana/data mysql/data
         
-        cat > alertmanager.yml <<EOF
+        cat > alertmanager.yml <<'EOF'
 global:
   smtp_from: alertmanager@localhost
   smtp_smarthost: localhost:587
@@ -511,3 +511,4 @@ EOF
             echo "3. Memory issues - Check available memory"
             echo "4. Configuration errors - Verify docker-compose.yml syntax"
         fi
+
