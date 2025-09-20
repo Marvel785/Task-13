@@ -398,7 +398,7 @@ jobs:
               echo "RUN ./mvnw package -DskipTests" >> Dockerfile
               echo "" >> Dockerfile
               echo "# Expose port" >> Dockerfile
-              echo "EXPOSE 8080" >> Dockerfile
+              echo "EXPOSE 9500" >> Dockerfile
               echo "" >> Dockerfile
               echo "# Run application" >> Dockerfile
               echo "CMD [\"java\", \"-jar\", \"target/*.jar\"]" >> Dockerfile
